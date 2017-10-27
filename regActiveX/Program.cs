@@ -9,7 +9,6 @@ namespace regActiveX
             var check = false;
             var isRegistr = false;
             var logo = true;
-            var isOleControl = true;
             string filePath = null;
             
             if (args == null || args.Length == 0)
@@ -43,9 +42,6 @@ namespace regActiveX
                         case "n":
                             logo = false;
                             break;
-                        case "x":
-                            isOleControl = false;
-                            break;
                         default:
                             ShowHelp();
                             return -1;
@@ -77,7 +73,7 @@ namespace regActiveX
                     return conRegistration.CheckClassCOM(filePath) ? 1 : 0;
                 }
                 if (isRegistr)
-                    conRegistration.RegisterCOM(filePath, isOleControl);
+                    conRegistration.RegisterCOM(filePath);
                 else
                     conRegistration.UnregisterCOM(filePath);
 
@@ -105,7 +101,6 @@ namespace regActiveX
             Console.WriteLine("\t/u Отмена регистрации dll");
             Console.WriteLine("\t/c Проверка регистрация dll");
             Console.WriteLine("\t/n Не выводить логотип");
-            Console.WriteLine("\t/x Регистрация как NOT OleControl (зарегистрированный класс)");
             Console.WriteLine("\t/h Это сообщение");
         }
     }

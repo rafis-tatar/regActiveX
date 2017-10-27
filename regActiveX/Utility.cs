@@ -27,7 +27,33 @@ namespace regActiveX
         public static bool IsComVisible(Type type)
         {
             ComVisibleAttribute[] attributes = (ComVisibleAttribute[])type.GetCustomAttributes(typeof(ComVisibleAttribute), false);
-            return (attributes.Length > 0 && attributes[0].Value);
+            //InterfaceTypeAttribute[] attributes2 = (InterfaceTypeAttribute[]) type.GetCustomAttributes(typeof(InterfaceTypeAttribute), false);
+            return (attributes.Length > 0 && attributes[0].Value);// || attributes2.Length > 0;
+        }
+
+        public static ComSourceInterfacesAttribute GetComSourceInterfaces(Type type)
+        {
+            ComSourceInterfacesAttribute comSourceInterfacesAttribute = null;
+            var attributes = (ComSourceInterfacesAttribute[])type.GetCustomAttributes(typeof(ComSourceInterfacesAttribute), false);
+            if (attributes.Length > 0)
+            {
+                comSourceInterfacesAttribute = attributes[0];
+            }
+            return comSourceInterfacesAttribute;
+        }
+        public static string GetProgID(Type type)
+        {
+            string progId = type.FullName;
+            if (IsComVisible(type))
+            {
+                var attributes = type.GetCustomAttributes(typeof(ProgIdAttribute), true);
+                if (attributes.Length > 0)
+                {
+                    var progIdAttrib = attributes[0] as ProgIdAttribute;
+                    progId = progIdAttrib?.Value;
+                }
+            }
+            return progId;
         }
         /// <summary>
         ///проверяет является ли данный тип делегатом

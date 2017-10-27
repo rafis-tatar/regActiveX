@@ -22,11 +22,11 @@ namespace regActiveX
         {
             Assembly assembly = Assembly.LoadFrom(filepath);
             Log("\nCancel registration of Assemblies " + filepath);
-            foreach (Type type in assembly.GetExportedTypes().Where(Utility.IsComVisible))
+            foreach (Type type in assembly.GetExportedTypes())
             {
                 foreach (RegistryHive baseKey in GetBaseKeys())
                 {
-                    var key = Unregister(type.FullName, baseKey);
+                    var key = Unregister(Utility.GetProgID(type), baseKey, Utility.IsComVisible(type));
                     var d = type.GetMethods().Where(o => o.GetCustomAttributes(typeof(ComUnregisterFunctionAttribute), false).Any()).ToArray();
                     if (d.Any())
                     {
@@ -38,26 +38,26 @@ namespace regActiveX
                     }
                 }
             }
-            Log("");
         }
 
         /// <summary>
         /// Регистрация сборки 
         /// </summary>
         /// <param name="filepath">путь к сборке .dll</param>
-        /// <param name="isControl">Как OleControl</param>
-        public void RegisterCOM(string filepath, bool isControl = true)
+        public void RegisterCOM(string filepath)
         {
             var assembly = Assembly.LoadFrom(filepath);
             var types = assembly.GetExportedTypes();
             Log("\nRegister Assembly " + filepath);
-            foreach (var type in types.Where(Utility.IsComVisible))
+            Log("");
+            foreach (var type in types)//.Where(Utility.IsComVisible))
             {
+                bool isControl = Utility.IsComVisible(type) && (type.BaseType == typeof(System.Windows.Forms.Control) || type.BaseType == typeof(System.Windows.Forms.UserControl));
                 var key = RegisterCOM(type, isControl);
                 var d = type.GetMethods().Where(o => o.GetCustomAttributes(typeof(ComRegisterFunctionAttribute), false).Any()).ToArray();
                 if (d.Any())
                 {
-                    var str = string.Format("{0}\\CLSID\\{1}", key, type.GUID.ToString("B"));
+                    var str = $"{key}\\CLSID\\{type.GUID:B}";
                     foreach (MethodInfo methodInfo in d)
                     {
                         methodInfo.Invoke(type, new object[1] { str });
@@ -76,6 +76,7 @@ namespace regActiveX
             var types = assembly.GetExportedTypes().Where(o => !o.IsInterface && Utility.IsComVisible(o) && !o.IsDelegate() && !o.IsNested).ToArray();
 
             Log("\nCheck assembly registration " + filepath);
+            Log("");
             bool[] regAllTypes = new bool[types.Length];
             for (int i = 0; i < types.Length; i++)
             {
@@ -87,7 +88,7 @@ namespace regActiveX
 
         private bool CheckClass(Type type)
         {
-            var progID = type.FullName;
+            var progID = Utility.GetProgID(type);
             var basekey = Utility.IsAdministrator() ? RegistryHive.LocalMachine : RegistryHive.ClassesRoot;
             var keyPath = GetKeyPath(basekey);
 
@@ -107,9 +108,10 @@ namespace regActiveX
                 string logmsg = string.Empty;
                 RegistryKey keyProgID = keys[i].OpenSubKey(progID);
                 regAllplatform[i] = keyProgID != null;
-                logmsg = regAllplatform[i] ? string.Format("{0}:{1} REGISTERED IN [{2}]", keyProgID.View, progID, keyProgID.Name) : string.Format("{0} UNREGISTERED", progID);
+                logmsg = regAllplatform[i] ? $"{progID} REGISTERED IN {keyProgID?.View}:[{keyProgID?.Name}]": $"{progID} IN {keys[i]?.View} UNREGISTERED";
                 Log(logmsg);
             }
+            Log("");
             return regAllplatform.All(o => o);
         }
         private static RegistryHive[] GetBaseKeys()
@@ -132,48 +134,54 @@ namespace regActiveX
         }
         private static string RegisterCOM(Type type, bool isControl = true)
         {
-            var progID = type.FullName;
+            var progID = Utility.GetProgID(type);
             var guidStr = "{" + type.GUID.ToString() + "}";
 
             var basekey = GetBaseKeys()[0];
             var keyPath = GetKeyPath(basekey);
 
-
-            var attributes = (ProgIdAttribute[])type.GetCustomAttributes(typeof(ProgIdAttribute), false);
-            if (attributes.Length > 0) progID = attributes[0].Value;
-
             Log("Register " + progID);
 
-            string retKeyStr = string.Empty;
-            string typeLibGUID = string.Empty;
-
+            string typeLibGuid;
 
             var regularx86View = RegistryKey.OpenBaseKey(basekey, RegistryView.Registry32);
             var keys = new RegistryKey[Environment.Is64BitOperatingSystem ? 2 : 1];
             keys[0] = regularx86View.OpenSubKey(keyPath, RegistryKeyPermissionCheck.ReadWriteSubTree, System.Security.AccessControl.RegistryRights.FullControl);
-            retKeyStr = keys[0].Name;
+            var retKeyStr = keys[0]?.Name;
             if (Environment.Is64BitOperatingSystem)
             {
                 var regularx64View = RegistryKey.OpenBaseKey(basekey, RegistryView.Registry64);
                 keys[1] = regularx64View.OpenSubKey(keyPath, RegistryKeyPermissionCheck.ReadWriteSubTree, System.Security.AccessControl.RegistryRights.FullControl);
-                retKeyStr = keys[1].Name;
-                typeLibGUID = SetTypeLib(keys[1], type);
+                retKeyStr = keys[1]?.Name;
+                typeLibGuid = SetTypeLib(keys[1], type);
             }
             else
             {
-                typeLibGUID = SetTypeLib(keys[0], type);
+                typeLibGuid = SetTypeLib(keys[0], type);
             }
 
             foreach (RegistryKey rootKey in keys)
             {
-                if (type.IsInterface || !Utility.IsComVisible(type) || type.IsDelegate() || type.IsNested)
+                //var comSourceI = Utility.GetComSourceInterfaces(type);
+                //if (comSourceI != null)
+                //{
+                //    var eventType = type.Assembly.GetType(comSourceI.Value);
+                //    SetInterface(rootKey, eventType, typeLibGUID);
+                //}
+
+                if (!Utility.IsComVisible(type))
                 {
-                    SetInterface(rootKey, type, typeLibGUID);
+                    if (type.IsInterface || type.IsDelegate() || type.IsNested)
+                    {
+                        SetInterface(rootKey, type, typeLibGuid);
+                    }
                     continue;
                 }
-                //[HKEY_CURRENT_USER\Software\Classes\Prog.ID]
-                //@="Namespace.Class"
-                RegistryKey keyProgID = rootKey.CreateSubKey(progID);
+
+                /*****************************************************************
+                * [HKEY_CURRENT_USER\Software\Classes\Prog.ID]="Namespace.Class" *
+                *****************************************************************/
+                var keyProgID = rootKey.CreateSubKey(progID);
                 keyProgID.SetValue(null, type.FullName);
 
                 //[HKEY_CURRENT_USER\Software\Classes\Prog.ID\CLSID]
@@ -186,7 +194,8 @@ namespace regActiveX
                
                 RegistryKey clsid = rootKey.CreateSubKey("CLSID");
                 RegistryKey keyCLSID = clsid.CreateSubKey(guidStr);
-                keyCLSID.SetValue(null, type.FullName);
+                //keyCLSID.SetValue(null, type.FullName); 
+                keyCLSID.SetValue(null, progID);
 
                 if (isControl)
                 {
@@ -199,7 +208,7 @@ namespace regActiveX
                 //[HKEY_CURRENT_USER\Software\Classes\CLSID\{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}\TypeLib]
                 // @="typeLibGUID"
                 var keyTypeLibGuid = keyCLSID.CreateSubKey("TypeLib");
-                keyTypeLibGuid.SetValue(null, typeLibGUID);
+                keyTypeLibGuid.SetValue(null, typeLibGuid);
                 keyTypeLibGuid.Close();
 
                 //[HKEY_CURRENT_USER\Software\Classes\CLSID\{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}\ProgId]
@@ -225,13 +234,13 @@ namespace regActiveX
 
                 //[HKEY_CURRENT_USER\Software\Classes\CLSID\{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}\Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}]
                 keyCLSID.CreateSubKey(@"Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}");
-                Log(string.Format("Class {0} registered in to [{1}]", type.FullName, keyCLSID.Name));
+                Log($"Class {progID} registered in to {rootKey.View}:[{keyCLSID.Name}]");
                 keyCLSID.Close();
             }
-
+            Log("");
             return retKeyStr;
         }
-        private static string Unregister(string progId, RegistryHive basekey)
+        private static string Unregister(string progId, RegistryHive basekey, bool withLog=true)
         {
             var retkeyStr = string.Empty;
             var keyPath = GetKeyPath(basekey);
@@ -251,36 +260,39 @@ namespace regActiveX
             foreach (RegistryKey key in keys)
             {
                 var rootKey = key.OpenSubKey(keyPath, RegistryKeyPermissionCheck.ReadWriteSubTree, System.Security.AccessControl.RegistryRights.FullControl);
-                Log(string.Format("Open key [{0}\\{1}]", rootKey.Name, progId));
+                if (withLog)
+                {
+                    Log("");
+                    Log($"Open key {key.View} [{rootKey.Name}\\{progId}]");
+                }
                 RegistryKey keyClass = null;
                 try
                 {
                     keyClass = rootKey.OpenSubKey(progId, true);
                 }
-                catch (Exception exception)
+                catch
                 {
-                    Log(exception.Message);
                     continue;
                 }
                 //******************* удалив ключ из ветки HKEY_CURRENT_USER\Software\Classes (progID) сохраняем clsid в переменной 
                 //*******************для удаления этого clsid в других ветках реестра (HKCU,HKLM и.т.д , а также в других ветках разрядности (x64))
                 if (keyClass == null && string.IsNullOrWhiteSpace(clsid))
                 {
-                    Log(string.Format("CLSID for {0} not found...", progId));
+                    if (withLog) Log(string.Format("CLSID for {0} not found...", progId));
                     continue;
                 }
-                else if (keyClass != null)
+
+                if (keyClass != null)
                 {
                     clsid = (string)keyClass.OpenSubKey("CLSID").GetValue("");
                     if (string.IsNullOrWhiteSpace(clsid)) continue;
                 }
                 //***************************
 
-                Log(string.Format("Open key [{0}\\{1}]", rootKey.Name, "CLSID"));
                 var keyCLSID = rootKey.OpenSubKey("CLSID", true);
                 if (keyCLSID == null) continue;
 
-                Log(string.Format("Open key [{0}\\{1}]", keyCLSID.Name, clsid));
+                Log($"Open key [{keyCLSID.Name}\\{clsid}]");
                 var key_clsid = keyCLSID.OpenSubKey(clsid);
 
                 if (key_clsid != null)
@@ -290,20 +302,13 @@ namespace regActiveX
                     {
 
                         string typeLib = (string)typeLibkey.GetValue("");
-                        Log("");
+                        
                         Log(string.Format("TypeLib {1} from [{0}]", key_clsid.Name, typeLib));
-
-                        Log("");
-                        Log(string.Format("Open key [{0}\\{1}]", rootKey.Name, "INTERFACE"));
                         UnregisterInterface(keys, typeLib, keyPath);
-
-                        Log("");
-                        Log(string.Format("Open key [{0}\\{1}]", rootKey.Name, "TypeLib"));
                         UnregistrTypeLib(keys, typeLib, keyPath);
                     }
                     else
                     {
-                        Log("");
                         Log($"TypeLib from [{key_clsid.Name}] not found");
                     }
 
@@ -314,9 +319,10 @@ namespace regActiveX
                 if (!DeleteKeyAndCheck(rootKey, progId))
                     Log(string.Format("not deleted key {1} from [{0}]", rootKey.Name, progId));
 
-                Log("");
                 rootKey.Close();
             }
+
+            if (withLog) Log("");
             return retkeyStr;
         }
 
@@ -331,7 +337,7 @@ namespace regActiveX
 
                     keyInterface = rootKey.OpenSubKey("INTERFACE", true);
                 }
-                catch (Exception exception)
+                catch
                 {
                     continue;
                 }
@@ -343,7 +349,7 @@ namespace regActiveX
                     {
                         keyint = keyInterface.OpenSubKey(name, true);
                     }
-                    catch (Exception exception)
+                    catch
                     {
                         continue;
                     }
@@ -358,7 +364,7 @@ namespace regActiveX
                     {
                         _Ityplib = keyint.OpenSubKey("TypeLib", true);
                     }
-                    catch (Exception exception)
+                    catch 
                     {
                         continue;
                     }
@@ -369,7 +375,7 @@ namespace regActiveX
                         if (Ityplib != null && Ityplib == typLibGUID)
                         {
                             keyint.Close();
-                            Log(string.Format("delete key {1} from [{0}]", keyInterface.Name, name));
+                            Log(string.Format("delete key {1} from {2}:[{0}]", keyInterface.Name, name, key.View));
                             keyInterface.DeleteSubKeyTree(name);
                             continue;
                         }
@@ -389,14 +395,14 @@ namespace regActiveX
                 {
                     keyTypeLib = rootKey.OpenSubKey("TypeLib", true);
                 }
-                catch (Exception exception)
+                catch
                 {
                     continue;
                 }
 
                 if (keyTypeLib == null) continue;
 
-                Log(string.Format("delete key {1} from [{0}]", keyTypeLib.Name, typeLib));
+                Log(string.Format("delete key {1} from {2}:[{0}]", keyTypeLib.Name, typeLib, key.View));
                 keyTypeLib.DeleteSubKeyTree(typeLib, false);
                 keyTypeLib.Close();
             }
@@ -410,8 +416,7 @@ namespace regActiveX
 
             if (CheckInterface(keyInteface, interfaceName, typeLibguid))
             {
-                Log(string.Format("Found registered Interface {0} in to [{1}]", interfaceName, keyInteface.Name));
-                return;
+                Log(string.Format("Found registered Interface {0} in to {2}[{1}] and be deleted", interfaceName, keyInteface.Name, key.View));
             }
 
             var guidIntrface = Guid.NewGuid().ToString("B");
@@ -453,6 +458,7 @@ namespace regActiveX
                     continue;
                 }
 
+
                 var subkey_typlib = subkey.OpenSubKey("TypeLib");
                 if (subkey_typlib == null) continue;
 
@@ -465,7 +471,11 @@ namespace regActiveX
 
                 subkey_typlib.Close();
                 subkey.Close();
-                if (nm.ToLower().Trim() == name.ToLower().Trim() && tl.ToLower().Trim() == typeLibGuid.ToLower().Trim()) return true;
+                if (nm.ToLower().Trim() == name.ToLower().Trim() && tl.ToLower().Trim() == typeLibGuid.ToLower().Trim())
+                {
+                    interfaceKey.DeleteSubKeyTree(key);
+                    return true;
+                }
             }
             return false;
         }
@@ -474,11 +484,21 @@ namespace regActiveX
         {
             var tlbdir = System.IO.Path.GetDirectoryName(type.Assembly.Location);
             var tlbFullname = tlbdir + "\\" + System.IO.Path.GetFileNameWithoutExtension(type.Assembly.Location) + ".tlb";
-            if (!System.IO.File.Exists(tlbFullname)) throw new FileNotFoundException(string.Format("невозможно найти файл: {0}", tlbFullname));
+            if (!System.IO.File.Exists(tlbFullname))
+            {
+                //throw new FileNotFoundException(string.Format("невозможно найти файл: {0}", tlbFullname));
+                var prc = Process.Start("TlbExp.exe", $"{type.Assembly.Location} /out:{tlbFullname}");
+            }
+
+            if (!System.IO.File.Exists(tlbFullname))
+            {
+                throw new FileNotFoundException(string.Format("невозможно найти файл: {0}", tlbFullname));
+            }
+
             var oldguid = CheckTypeLib(key, type, tlbFullname);
             if (!string.IsNullOrWhiteSpace(oldguid))
             {
-                Log(string.Format("Found registered TypeLib {0} key in to [{1}\\TypeLib]", oldguid, key.Name));
+                Log(string.Format("Found registered TypeLib {0} key in to {2}[{1}\\TypeLib\\{3}]", tlbFullname, key.Name, key.View, oldguid));
                 return oldguid;
             }
 
@@ -489,7 +509,7 @@ namespace regActiveX
             keyTypeLib.CreateSubKey("HELPDIR").SetValue(null, tlbdir);
             keyTypeLib.CreateSubKey("0\\win32").SetValue(null, tlbFullname);
 
-            Log(string.Format("TypeLib {0} registered in to [{1}\\{2}]", guidTypeLib, key.Name, "TypeLib"));
+            Log(string.Format("TypeLib {0} registered in to {3}[{1}\\{2}]", guidTypeLib, key.Name, "TypeLib", key.View));
             keyTypeLib.Close();
             return guidTypeLib;
         }
@@ -507,7 +527,11 @@ namespace regActiveX
                 var assmName = (string)subkey.GetValue(null);
                 var assFulPat = (string)win32key.GetValue(null);
 
-                if (type.Assembly.GetName().Name == assmName && assFulPat == fullpath) return sname;
+                if (type.Assembly.GetName().Name == assmName && assFulPat == fullpath)
+                {
+                    //keyTypeLib.DeleteSubKeyTree(sname);
+                    return sname;
+                }
             }
             return null;
         }
@@ -535,7 +559,7 @@ namespace regActiveX
             {
                 chekkey = key.OpenSubKey(subkeyName);
             }
-            catch (Exception)
+            catch
             {
                 return false;
             }

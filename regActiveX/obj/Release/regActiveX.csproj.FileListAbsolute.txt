@@ -1,0 +1,4 @@
+E:\Coding\Work\ArmitsC#\Armits.WPF\Source\App\regActiveX\regActiveX\bin\Release\regActiveX.exe
+E:\Coding\Work\ArmitsC#\Armits.WPF\Source\App\regActiveX\regActiveX\bin\Release\regActiveX.pdb
+E:\Coding\Work\ArmitsC#\Armits.WPF\Source\App\regActiveX\regActiveX\obj\Release\regActiveX.exe
+E:\Coding\Work\ArmitsC#\Armits.WPF\Source\App\regActiveX\regActiveX\obj\Release\regActiveX.pdb

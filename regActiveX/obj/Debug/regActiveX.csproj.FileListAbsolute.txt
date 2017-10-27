@@ -1,0 +1,9 @@
+E:\Coding\Work\ArmitsC#\Armits.WPF\Source\App\regActiveX\regActiveX\bin\Debug\regActiveX.exe
+E:\Coding\Work\ArmitsC#\Armits.WPF\Source\App\regActiveX\regActiveX\bin\Debug\regActiveX.pdb
+E:\Coding\Work\ArmitsC#\Armits.WPF\Source\App\regActiveX\regActiveX\obj\Debug\regActiveX.exe
+E:\Coding\Work\ArmitsC#\Armits.WPF\Source\App\regActiveX\regActiveX\obj\Debug\regActiveX.pdb
+D:\MyFolders\Documents\GitHub\regActiveX\regActiveX\obj\Debug\regActiveX.exe
+D:\MyFolders\Documents\GitHub\regActiveX\regActiveX\obj\Debug\regActiveX.pdb
+D:\MyFolders\Documents\GitHub\regActiveX\regActiveX\bin\Debug\regActiveX.exe
+D:\MyFolders\Documents\GitHub\regActiveX\regActiveX\bin\Debug\regActiveX.pdb
+D:\MyFolders\Documents\GitHub\regActiveX\regActiveX\obj\Debug\regActiveX.csprojResolveAssemblyReference.cache
